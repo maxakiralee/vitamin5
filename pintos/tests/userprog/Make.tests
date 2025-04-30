@@ -5,8 +5,9 @@ tests/%.output: PUTFILES = $(filter-out kernel.bin loader.bin, $^)
 
 
 tests/userprog_TESTS = $(addprefix tests/userprog/,do-nothing           \
-stack-align-0 args-none args-single args-multiple args-many             \
-args-dbl-space sc-bad-sp sc-bad-arg sc-boundary sc-boundary-2           \
+write-stdout increment args-none args-single args-multiple args-many    \
+args-dbl-space stack-align-1 stack-align-2 stack-align-3                \
+stack-align-4 sc-bad-sp sc-bad-arg sc-boundary sc-boundary-2            \
 sc-boundary-3 halt exit create-normal create-empty create-null          \
 create-bad-ptr create-long create-exists create-bound open-normal       \
 open-missing open-boundary open-empty open-null open-bad-ptr            \
@@ -17,25 +18,23 @@ write-zero write-stdin write-bad-fd exec-once exec-arg exec-bound       \
 exec-bound-2 exec-bound-3 exec-multiple exec-missing exec-bad-ptr       \
 wait-simple wait-twice wait-killed wait-bad-pid multi-recurse           \
 multi-child-fd rox-simple rox-child rox-multichild bad-read bad-write   \
-bad-read2 bad-write2 bad-jump bad-jump2 write-stdout increment           \
-stack-align-1 stack-align-2 stack-align-3 stack-align-4)
+bad-read2 bad-write2 bad-jump bad-jump2)
 
 tests/userprog_PROGS = $(tests/userprog_TESTS) $(addprefix \
 tests/userprog/,child-simple child-args child-bad child-close child-rox)
 
+tests/userprog/do-nothing_SRC = tests/userprog/do-nothing.c
 tests/userprog/write-stdout_SRC = tests/userprog/write-stdout.c
 tests/userprog/increment_SRC = tests/userprog/increment.c
-tests/userprog/do-nothing_SRC = tests/userprog/do-nothing.c
-tests/userprog/stack-align-0_SRC = tests/userprog/stack-align-0.c
-tests/userprog/stack-align-1_SRC = tests/userprog/stack-align.c
-tests/userprog/stack-align-2_SRC = tests/userprog/stack-align.c
-tests/userprog/stack-align-3_SRC = tests/userprog/stack-align.c
-tests/userprog/stack-align-4_SRC = tests/userprog/stack-align.c
 tests/userprog/args-none_SRC = tests/userprog/args.c
 tests/userprog/args-single_SRC = tests/userprog/args.c
 tests/userprog/args-multiple_SRC = tests/userprog/args.c
 tests/userprog/args-many_SRC = tests/userprog/args.c
 tests/userprog/args-dbl-space_SRC = tests/userprog/args.c
+tests/userprog/stack-align-1_SRC = tests/userprog/stack-align.c
+tests/userprog/stack-align-2_SRC = tests/userprog/stack-align.c
+tests/userprog/stack-align-3_SRC = tests/userprog/stack-align.c
+tests/userprog/stack-align-4_SRC = tests/userprog/stack-align.c
 tests/userprog/sc-bad-sp_SRC = tests/userprog/sc-bad-sp.c tests/main.c
 tests/userprog/sc-bad-arg_SRC = tests/userprog/sc-bad-arg.c tests/main.c
 tests/userprog/bad-read_SRC = tests/userprog/bad-read.c tests/main.c
