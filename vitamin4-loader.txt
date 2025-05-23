@@ -1,0 +1,82 @@
+﻿Vitamin 4: Loader 
+UCLA CS 111, Spring 2025 
+Due: May 19, 2025 
+Contents 
+1 Introduction 2 1.1 Getting Started . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2 
+2 Overview 2 
+3 The increment System Call 3 3.1 The increment Test . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3 3.2 Implementing a System Call . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3 
+4 Writing to the Console 4 
+5 Stack Setup and Argument Passing 4 5.1 Command-Line Arguments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4 5.1.1 Copying Arguments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4 5.1.2 Generality and Edge Cases . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5 5.2 Stack Alignment . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5 
+6 Design for the Next Assignment 5 
+7 Submission 5 7.1 Code . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5 7.2 Design for Vitamin 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6 
+1
+UCLA CS 111, Spring 2025 Vitamin 4: Loader Due: May 19, 2025 
+1 Introduction 
+The loader is the part of the kernel that creates a process from an executable file. As you saw in the previous assignment, Pintos already includes a mostly-complete loader. It already implements the hard work of parsing the header of an executable file and reading its contents into memory. The loader, however, does not properly initialize the stack segment of the process it creates. In this assignment, you will enhance Pintos’ loader to properly initialize the stack segment of a new process, so that it includes the command-line arguments passed to the process. 
+For this assignment and the next, you will work in groups; each group will make one submission. (Recall that, at the same time that Vitamin 3 was due, you were required to submit whom you will be working with for Vitamins 4 and 5.) 
+1.1 Getting Started 
+Log in to the CS 111 Environment, and find the vitamins directory. At the time of writing, there are no updates to the Pintos starter code compared to the previous vitamin. However, to be sure that you have the latest code, you should go to the vitamins directory, commit or stash any outstanding changes, and then run: 
+$ git pull origin main 
+Then, run: 
+$ cd pintos 
+2 Overview 
+In Pintos, many of the tests work by running user programs in Pintos and checking that the program has the correct output. One such program is do-nothing, which you saw in the previous assignment; the test worked by running the do-nothing program as a Pintos process, and then checking that its output was do-nothing: exit(111). This line was printed by the Pintos kernel itself when the do-nothing process exited. 
+In other tests, including those that check for correct initialization of the stack, the process itself prints out information (e.g., about the command-line arguments it was passed) by issuing write system calls to file descriptor 1, which corresponds to standard output. For example, look at tests/userprog/args.c. It makes numerous calls to msg, which has a similar interface as printf and is defined in tests/lib.c. The msg function works by calling write on STDOUT_FILENO (defined as 1 in lib/stdio.h). The function write works by issuing a write system call, which the Pintos kernel must handle. You are encouraged to look at lib/user/syscall.c and lib/syscall-nr.h to understand how exactly the syscall is issued. 
+Thus, on its own, implementing correct initialization of the user stack when loading a process is not enough to pass the tests checking for correct initialization of the stack and correct passing of command-line arguments. Unless writing to standard output is also implemented, these tests will fail because the test programs’ expected output will not show up. Thus, the first order of business in this assignment is to implement the write system call for standard output only, so that Pintos processes can print to the command line. Then, you can work on the Pintos loader, printing to standard output (or relying on the tests, which print to standard output) to ensure that command-line arguments appear to the program directly. 
+The next few sections walk you through this process. For this assignment, it is recommended that you work through the sections in order. Remember to build starting from your work in the previous assignment, in which you got the do-nothing test to pass. 
+As you work on this assignment at the next, you are encouraged to write your own user programs for Pintos (e.g., for debugging). You can compile your Pintos user programs and run them as tests by modifying 
+2
+UCLA CS 111, Spring 2025 Vitamin 4: Loader Due: May 19, 2025 
+tests/userprog/Make.tests as needed. You can also compile your Pintos user programs independently of the tests by modifying examples/Makefile as needed. 
+Finally, note that in Pintos, each process consists of a single thread. Thus, when we refer to the “stack of a process,” what we really mean is the stack of the thread that exists within that process. 
+3 The increment System Call 
+Your first task for this assignment is to implement the increment system call. It is described below: 
+System Call: int increment(int i) This system call accepts a single argument, i. It computes i + 1 and returns the resulting value. 
+Of course, real operating systems do not include system calls like increment, as you can easily increment an integer in userspace without issuing a system call. The purpose of this system call is to give you practice implementing a system call in Pintos. 
+For this assignment, you do not need to validate system call arguments or their addresses—you will do that in the next assignment. 
+3.1 The increment Test 
+The increment test tests that the increment system call is implemented correctly. You should read the source code for the increment test, in tests/userprog/increment.c, to see how it works; it is very similar to do-nothing. Like do-nothing, the increment test is written so that you can make the test pass even before you implement the write system call for standard output. 
+Once you implement the increment system call, the increment test should pass. 
+3.2 Implementing a System Call 
+Look at lib/user/syscall.c to see how the increment function works. It executes assembly code in an asm statement to (1) push arguments (the syscall number and arguments to the syscall) to the stack, (2) execute int $0x30, and (3) pop the arguments off of the stack. When it executes int $0x30, it switches to kernel mode; eventually, control reaches the Pintos system call handler, the syscall_handler function in userprog/syscall.c. In transitioning to kernel mode, we switched to using the in-kernel stack for the thread that issued the system call; the arguments that were pushed to the stack in lib/user/syscall.c were pushed to the userspace stack for the thread. So, we cannot simply pop the arguments off of the stack to read them. However, the hardware saved the user program’s registers to the base of the thread’s in-kernel stack when it switched to kernel mode, and these register values are made available via the struct intr_frame *f argument to syscall_handler. Thus, you can inspect the contents of f to learn the user program’s stack pointer, and read the user program’s stack to learn what values it pushed to the stack before executing int $0x30. See the provided implementation of the exit system call for an example of this. 
+After handling the system call, the iret instruction is executed to return back to userspace (this is im plemented in threads/intr_stubs.S). This restores the contents of the registers at the base of the kernel stack when resuming userspace execution of the process. This means that your system call handler can alter the contents of user registers by modifying the fields of f. You can use this mechanism to provide a return value for your system call to the user process. Note that the asm statements in lib/user/syscall.c use "=a"(retval), which tells the compiler that the specified assembly code writes an output to eax, and that this result corresponds to the retval variable. Thus, once execution of the assembly code in the asm statement finishes, the value of eax will be made visible to the rest of the user program via retval. You can read the GCC documentation on asm1for more details. 
+1https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html 
+3
+UCLA CS 111, Spring 2025 Vitamin 4: Loader Due: May 19, 2025 
+4 Writing to the Console 
+Your second task in this assignment is to implement the write system call for standard output. The write system call is described below. 
+System Call: int write(int fd, const void *buffer, unsigned size) This system call writes size bytes from buffer to the open file corresponding to fd. It returns the number of bytes actually written, which may be less than size. 
+Standard output corresponds to the file descriptor 1. For this assignment, your implementation of the write system call only needs to work for file descriptor 1, not any other file descriptors. As before, you do not need to validate system call arguments or their addresses for this assignment. 
+Writes to standard output (file descriptor 1) should be output via the console. In the Pintos kernel, you can accomplish this by calling the putbuf function declared in lib/kernel/stdio.h and defined in lib/kernel/console.c. 
+The interface provided by the write system call allows it to process fewer bytes than it is provided (i.e., return short), since the number of bytes that it actually processed is returned to the caller. For standard output (file descriptor 1), your implementation should always process all of the bytes on a successful call to write. Additionally, these bytes should be processed via a single call to putbuf. 
+The write-stdout test checks that the write system call is implemented properly for standard output (file descriptor 1). You should read the source code for this test (by now, you should know where to find it). Once you complete this part of the assignment, the write-stdout test should pass. 
+5 Stack Setup and Argument Passing 
+Now, you will implement the main task for this assignment—enhancing Pintos’ loader to correctly set up the stack for new processes, including passing command-line arguments to processes. 
+5.1 Command-Line Arguments 
+The “process_execute(char *file_name)” creates new user-level processes in Pintos. You saw this func tion in the previous assignment, when using GDB to step through creation of the root process. Currently, the function does not support command-line arguments; the argument, file_name, contains only the file name of the executable without any command-line arguments. You must implement argument passing, so that calling “process_execute("ls -ahl")” will provide the 2 arguments, ["ls", "-ahl"], to the user program. 
+5.1.1 Copying Arguments 
+The user program accesses this command-line arguments via the argc and argv arguments passed to main; you saw in the previous assignment how the _start function calls main with argc and argv. Specifically, the new process should be able to follow the argv pointer to find its command-line arguments. Importantly, the command-line arguments must be made to exist in a place accessible to the user program (i.e., not in kernel memory). Thus, setting up the process’ userspace stack involves the following: 
+• Copying the command-line arguments, as null-terminated strings, onto the process’ userspace stack. • Creating the array of pointers that argv will point to, on the process’ userspace stack. • Ensuring that the _start function receives the correct values of argc and argv as its arguments. 
+To pass argc and argv as arguments to _start, you should follow the x86 Calling Convention, which is explained in the Pintos Reference. 
+4
+UCLA CS 111, Spring 2025 Vitamin 4: Loader Due: May 19, 2025 
+5.1.2 Generality and Edge Cases 
+The constant PHYS_BASE refers to the memory address at which kernel virtual memory starts. The pages at PHYS_BASE and above are marked as “kernel-only” so that the user program cannot access them. While PHYS_BASE has a particular value, 0xc0000000, your code for argument passing should not depend on the particular value of PHYS_BASE. It should be possible to choose PHYS_BASE to be any multiple of 0x10000000 from 0x80000000 to 0xf0000000, simply via recompilation. 
+An argument list may contain arguments separated by multiple spaces. In such cases, the arguments should be handled as if they were separated by one space. You do not need to support quotes or any special characters other than spaces. 
+You may enforce a reasonable limit on the size of the arguments. For example, Pintos currently allocates a single 4 KiB page for a process’ userspace stack; for this assignment, you do not need to support stack growth or allow larger stacks, so it is fine to assume that all arguments, pointers for the argv structure, and spacing fit within the 4 KiB page (or, for example, within half of the page). You should make sure to fail “cleanly” (i.e., not crash) if the provided arguments are too large. 
+You may find the strtok family of functions in the standard library useful. However, if you choose to use it, you should make sure to use strtok_r, not strtok. The reason is that strtok uses a global state variable, introducing race conditions if multiple threads call strtok concurrently (e.g., if multiple processes are being loaded concurrently). The strtok_r variant allows the caller to allocate and provide the state variable, allowing multiple threads to safely call it concurrently as long as each call uses a separate state variable. 
+5.2 Stack Alignment 
+The x86 Calling Convention includes a requirement on the memory alignment of stack frames—see the Pintos reference for details. Your implementation of setting up the stack should satisfy this requirement. Once you do, the stack-align-1, stack-align-2, stack-align-3, and stack-align-4 tests should pass. 
+6 Design for the Next Assignment 
+In Vitamin 5, you will implement many other system calls for Pintos, some of which require careful design. You should write a short design document describing your planned design for Vitamin 5 and submit it together with Vitamin 4. 
+Vitamin 5, including specific guidelines for the design document, will be released a week before Vitamin 4 is due. The design document is mentioned here only because it is due at the same time as Vitamin 4. We recommend that you complete the code for Vitamin 4 before working on the Vitamin 5 design document, since the experience of implementing Vitamin 4 will help inform your design. 
+7 Submission 
+For the code for this assignment and design for Vitamin 5, you should make one submission per group. 
+7.1 Code 
+You should submit your code as a .zip file in Gradescope. You can generate a .zip file in the correct format by first navigating to the pintos directory and then running zip vitamin4.zip -r threads userprog. If your solution required making changes to other directories, then you should include those in the .zip file that you submit. 
+You should receive full credit for this assignment once you pass the following tests: do-nothing, increment, write-stdout, args-none, args-single, args-multiple, args-many, args-dbl-space, stack-align-1, stack-align-2, stack-align-3, and stack-align-4. Remember that you can run the tests locally by running make check in the userprog directory. 
+5
+UCLA CS 111, Spring 2025 Vitamin 4: Loader Due: May 19, 2025 
+7.2 Design for Vitamin 5 
+You should submit your design document for Vitamin 5 on Gradescope. This will be done via a separate Gradescope assignment from the code for Vitamin 4. 
+6

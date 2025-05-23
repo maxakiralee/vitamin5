@@ -1,0 +1,258 @@
+﻿2 User Programs
+
+User programs are written under the illusion that they have the entire machine, which means that the operat-
+ing system must manage/protect machine resources correctly to maintain this illusion for multiple processes.
+
+In Pintos, more than one process can run at a time, but each process is single-threaded (multithreaded
+processes are not supported).
+
+9
+
+UCLA CS 111, Spring 2025 Pintos Reference Vitamins 3, 4, and 5
+
+2.1 Overview of Source Files
+threads/thread.h Contains the struct thread definition, which is the Pintos thread control block. The
+fields in #ifdef USERPROG ... #endif are collectively the process control block. We expect that you
+will add fields to the process control block.
+userprog/process.c Loads ELF binaries, starts processes, and switches page tables on context switch.
+userprog/pagedir.c Manages the page tables. You probably won’t need to modify this code, but you may
+want to call some of these functions.
+userprog/syscall.c This is a skeleton system call handler. Currently, it only supports the exit syscall.
+lib/user/syscall.c Provides library functions for user programs to invoke system calls from a C program.
+Each function uses inline assembly code to prepare the syscall arguments and invoke the system call.
+We do expect you to understand the calling conventions used for syscalls (also in Reference).
+lib/syscall-nr.h This file defines the syscall numbers for each syscall.
+userprog/exception.c Handle exceptions. Currently all exceptions simply print a message and terminate
+the process. Some, but not all, solutions to the assignments in this course involve modifying page fault()
+in this file.
+gdt.c 80x86 is a segmented architecture. The Global Descriptor Table (GDT) is a table that describes the
+segments in use. These files set up the GDT. You should not need to modify these files. You can read
+the code if you’re interested in how the GDT works.
+tss.c The Task-State Segment (TSS) is used for 80x86 architectural task switching. Pintos uses the TSS
+only for switching stacks when a user process enters an interrupt handler, as does Linux. You should
+not need to modify these files. You can read the code if you’re interested in how the TSS works.
+2.2 How User Programs Work
+Pintos can run normal C programs, as long as they fit into memory and use only the system calls you
+implement. Notably, malloc cannot be implemented because none of the system calls that you are required
+to implement allow for memory allocation. Pintos also can’t run programs that use floating point operations,
+since the kernel doesn’t save and restore the processor’s floating-point unit when switching threads.
+The src/examples directory contains a few sample user programs. The Makefile in this directory compiles
+the provided examples, and you can edit it to compile your own programs as well. Pintos can load ELF
+executables with the loader provided for you in userprog/process.c.
+Until you copy a test program to the simulated file system (see Formatting and Using the File System from
+the Pintos Command Line), Pintos will be unable to do useful work. You should create a clean reference
+file system disk and copy that over whenever you trash your filesys.dsk beyond a useful state, which may
+happen occasionally while debugging.
+2.3 Virtual Memory Layout
+Virtual memory in Pintos is divided into two regions: user virtual memory and kernel virtual memory. User
+virtual memory ranges from virtual address 0 up to PHYS_BASE, which is defined in threads/vaddr.h and
+defaults to 0xc0000000 (3 GB). Kernel virtual memory occupies the rest of the virtual address space, from
+PHYS_BASE up to 4 GB.
+User virtual memory is per-process. When the kernel switches from one process to another, it also switches
+user virtual address spaces by changing the processor’s page directory base register (see pagedir_activate()
+in userprog/pagedir.c). struct thread contains a pointer to a process’s page table.
+Kernel virtual memory is global. It is always mapped the same way, regardless of what user process or
+kernel thread is running. In Pintos, kernel virtual memory is mapped one-to-one to physical memory,
+
+10
+
+UCLA CS 111, Spring 2025 Pintos Reference Vitamins 3, 4, and 5
+
+starting at PHYS_BASE. That is, virtual address PHYS_BASE accesses physical address 0, virtual address
+PHYS_BASE + 0x1234 accesses physical address 0x1234, and so on up to the size of the machine’s physical
+memory.
+A user program can only access its own user virtual memory. An attempt to access kernel virtual memory
+causes a page fault, handled by page_fault() in userprog/exception.c, and the process will be terminated.
+Kernel threads can access both kernel virtual memory and, if a user process is running, the user virtual
+memory of the running process. However, even in the kernel, an attempt to access memory at an unmapped
+user virtual address will cause a page fault.
+Typical Memory Layout Conceptually, each process is free to lay out its own user virtual memory
+however it chooses. In practice, user virtual memory is laid out like this:
+PHYS_BASE +----------------------------------+
+| user stack |
+| | |
+| | |
+| V |
+| grows downward |
+| |
+| |
+| |
+| |
+| grows upward |
+| ^ |
+| | |
+| | |
++----------------------------------+
+| uninitialized data segment (BSS) |
++----------------------------------+
+| initialized data segment |
++----------------------------------+
+| code segment |
+0x08048000 +----------------------------------+
+| |
+| |
+| |
+| |
+| |
+0 +----------------------------------+
+
+2.4 Accessing User Memory
+As part of a system call, the kernel must often access memory through pointers provided by a user program.
+The kernel must be very careful about doing so, because the user can pass a null pointer, a pointer to
+unmapped virtual memory, or a pointer to kernel virtual address space (above PHYS_BASE). All of these types
+of invalid pointers must be rejected without harm to the kernel or other running processes, by terminating
+the offending process and freeing its resources.
+There are at least two reasonable ways to do this correctly:
+• verify the validity of a user-provided pointer, then dereference it. If you choose this route, you’ll want
+to look at the functions in userprog/pagedir.c and in threads/vaddr.h. This is the simplest way
+to handle user memory access.
+
+11
+
+UCLA CS 111, Spring 2025 Pintos Reference Vitamins 3, 4, and 5
+
+• check only that a user pointer points below PHYS_BASE, then dereference it. An invalid user pointer will
+cause a “page fault” that you can handle by modifying the code for page_fault() in userprog/exception.c.
+This technique is normally faster because it takes advantage of the processor’s MMU, so it tends to be
+used in real kernels (including Linux).
+In either case, you need to make sure not to “leak” resources. For example, suppose that your system call
+has acquired a lock or allocated memory with malloc(). If you encounter an invalid user pointer afterward,
+you must still be sure to release the lock or free the page of memory. If you choose to verify user pointers
+before dereferencing them, this should be straightforward. It’s more difficult to handle if an invalid pointer
+causes a page fault, because there’s no way to return an error code from a memory access. Therefore, for
+those who want to try the latter technique, we’ll provide a little bit of helpful code:
+/* Reads a byte at user virtual address UADDR.
+UADDR must be below PHYS_BASE.
+Returns the byte value if successful, -1 if a segfault
+occurred. */
+static int
+get_user (const uint8_t *uaddr)
+{
+int result;
+asm ("movl $1f, %0; movzbl %1, %0; 1:"
+: "=&a" (result) : "m" (*uaddr));
+return result;
+}
+/* Writes BYTE to user address UDST.
+UDST must be below PHYS_BASE.
+Returns true if successful, false if a segfault occurred. */
+static bool
+put_user (uint8_t *udst, uint8_t byte)
+{
+int error_code;
+asm ("movl $1f, %0; movb %b2, %1; 1:"
+: "=&a" (error_code), "=m" (*udst) : "q" (byte));
+return error_code != -1;
+}
+
+Each of these functions assumes that the user address has already been verified to be below PHYS_BASE.
+They also assume that you’ve modified page_fault() so that a page fault in the kernel merely sets eax to
+0xffffffff and copies its former value into eip.
+If you do choose to use the second option (rely on the processor’s MMU to detect bad user pointers), do not
+feel pressured to use the get_user and put_user functions from above. There are other ways to modify the
+page fault handler to identify and terminate processes that pass bad pointers as arguments to system calls,
+some of which are simpler and faster than using get_user and put_user to handle each byte.
+
+12
+
+UCLA CS 111, Spring 2025 Pintos Reference Vitamins 3, 4, and 5
+
+2.5 Switching Processes
+It is sometimes useful while debugging to switch between processes. To observe the process switch, do the
+following in a fresh (i.e. with no existing breakpoints set) GDB session. Lines below starting with “#” are
+comments.
+debugpintos
+break process.c:process_exit
+continue
+# Shows you the current thread id
+call thread_current()->tid
+# Sets a breakpoint immediately after the call to sema_down in process_wait
+break 95
+continue
+# You should see a different thread id than before
+call thread_current()->tid
+# Shows other threads currently present in Pintos
+dumplist &all_list thread allelem
+2.6 80x86 Calling Convention
+This section summarizes important points of the convention used for normal function calls on 32-bit 80x86
+implementations of Unix. Some details are omitted for brevity.
+The calling convention works like this:
+1. The caller pushes each of the function’s arguments on the stack one by one, normally using the push
+assembly language instruction. Arguments are pushed in right-to-left order.
+The stack grows downward: each push decrements the stack pointer, then stores into the location it
+now points to, like the C expression *(--sp) = value.
+The stack pointer should be aligned to a 16-byte boundary once all of the arguments are pushed onto
+the stack; if needed, empty space should be left on the stack before the arguments are pushed, so that
+this alignment is achieved.
+2. The caller pushes the address of its next instruction (the return address ) on the stack and jumps to
+the first instruction of the callee. A single 80x86 instruction, call, does both.
+3. The callee executes. When it takes control, the stack pointer points to the return address, the first
+argument is just above it, the second argument is just above the first argument, and so on.
+4. If the callee has a return value, it stores it into register eax.
+5. The callee returns by popping the return address from the stack and jumping to the location it specifies,
+using the 80x86 ret instruction.
+6. The caller pops the arguments off the stack.
+Consider a function f() that takes three int arguments. This diagram shows a sample stack frame as seen
+by the callee at the beginning of step 3 above, supposing that f() is invoked as f(1, 2, 3). The initial
+stack address is arbitrary:
+
++----------------+
+0xbffffe7c | 3 |
+0xbffffe78 | 2 |
+0xbffffe74 | 1 |
+stack pointer --> 0xbffffe70 | return address |
++----------------+
+
+13
+
+UCLA CS 111, Spring 2025 Pintos Reference Vitamins 3, 4, and 5
+
+2.7 Program Startup Details
+The Pintos C library for user programs designates _start(), in lib/user/entry.c, as the entry point for
+user programs. This function is a wrapper around main() that calls exit() if main() returns:
+void
+_start (int argc, char *argv[])
+{
+exit (main (argc, argv));
+}
+The kernel must put the arguments for the initial function on the stack before it allows the user program
+to begin executing. The arguments are passed in the same way as the normal calling convention (see 80x86
+Calling Convention).
+Consider how to handle arguments for the following example command: /bin/ls -l foo bar. First, break
+the command into words: /bin/ls, -l, foo, bar. Place the words at the top of the stack. Order doesn’t
+matter, because they will be referenced through pointers.
+Then, push the address of each string plus a null pointer sentinel, on the stack, in right-to-left order. These
+are the elements of argv. The null pointer sentinel ensures that argv[argc] is a null pointer, as required
+by the C standard. The order ensures that argv[0] is at the lowest virtual address. The x86 ABI requires
+that %esp be aligned to a 16-byte boundary at the time the call instruction is executed (e.g., at the point
+where all arguments are pushed to the stack), so make sure to leave enough empty space on the stack so
+that this is achieved.
+Then, push argv (the address of argv[0]) and argc, in that order. Finally, push a fake “return address”:
+although the entry function will never return, its stack frame must have the same structure as any other.
+The table below shows the state of the stack and the relevant registers right before the beginning of the user
+program, assuming PHYS_BASE is 0xc0000000:
+
+Address Name Data Type
+0xbffffffc argv[3][...] bar\0 char[4]
+0xbffffff8 argv[2][...] foo\0 char[4]
+0xbffffff5 argv[1][...] -l\0 char[3]
+0xbfffffed argv[0][...] /bin/ls\0 char[8]
+0xbfffffec stack-align 0 uint8_t
+0xbfffffe8 argv[4] 0 char *
+0xbfffffe4 argv[3] 0xbffffffc char *
+0xbfffffe0 argv[2] 0xbffffff8 char *
+0xbfffffdc argv[1] 0xbffffff5 char *
+0xbfffffd8 argv[0] 0xbfffffed char *
+0xbfffffd4 argv 0xbfffffd8 char **
+0xbfffffd0 argc 4 int
+0xbfffffcc return address 0 void (*) ()
+
+In this example, the stack pointer would be initialized to 0xbfffffcc.
+As shown above, your code should start the stack at the very top of the user virtual address space, in the
+page just below virtual address PHYS_BASE (defined in threads/vaddr.h).
+You may find the non-standard hex_dump() function, declared in <stdio.h>, useful for debugging your
+argument passing code. Here’s what it would show in the above example:
+bfffffc0 00 00 00 00 | ....|
+bfffffd0 04 00 00 00 d8 ff ff bf-ed ff ff bf f5 ff ff bf |................|
+bfffffe0 f8 ff ff bf fc ff ff bf-00 00 00 00 00 2f 62 69 |............./bi|
+bffffff0 6e 2f 6c 73 00 2d 6c 00-66 6f 6f 00 62 61 72 00 |n/ls.-l.foo.bar.|
