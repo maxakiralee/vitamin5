@@ -8,6 +8,11 @@
 #include "threads/fixed-point.h"
 #include "threads/synch.h"
 
+/* Define max file number */
+
+#define MAX_FILES 128
+
+
 /* States in a thread's life cycle. */
 enum thread_status {
     THREAD_RUNNING, /* Running thread. */
@@ -97,6 +102,8 @@ struct thread {
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir; /* Page directory. */
+    struct file *files[MAX_FILES]; /* File descriptor table */
+    int next_fd; /* Next available fd */
 #endif
 
     /* Owned by thread.c. */
