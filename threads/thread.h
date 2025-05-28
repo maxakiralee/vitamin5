@@ -97,8 +97,6 @@ struct thread {
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir; /* Page directory. */
-    struct file *files[MAX_FILES]; /* File descriptor table */
-    int next_fd; /* Next available fd */
 #endif
 
     /* Owned by thread.c. */
