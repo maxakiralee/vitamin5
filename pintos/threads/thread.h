@@ -8,6 +8,10 @@
 #include "threads/fixed-point.h"
 #include "threads/synch.h"
 
+#ifdef USERPROG
+#include "filesys/file.h"
+#endif
+
 /* States in a thread's life cycle. */
 enum thread_status {
     THREAD_RUNNING, /* Running thread. */
@@ -25,6 +29,9 @@ typedef int tid_t;
 #define PRI_MIN 0 /* Lowest priority. */
 #define PRI_DEFAULT 31 /* Default priority. */
 #define PRI_MAX 63 /* Highest priority. */
+
+/* Maximum number of open files per process */
+#define MAX_FILES 128
 
 /* A kernel thread or user process.
 
@@ -97,6 +104,10 @@ struct thread {
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir; /* Page directory. */
+    
+    /* File descriptor table */
+    struct file *files[MAX_FILES]; /* Array of open files */
+    int next_fd; /* Next available file descriptor */
 #endif
 
     /* Owned by thread.c. */
