@@ -101,6 +101,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
             break;
 
+        case SYS_HALT:
+            shutdown_power_off();
+            break;
 
         default:
             // Handle unknown system calls
