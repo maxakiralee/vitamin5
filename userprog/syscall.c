@@ -165,6 +165,25 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
             }
             break;
 
+        case SYS_SEEK:
+            lock_acquire(&filesys_lock);
+            file_seek(thread_current()->files[args[1]], args[2]);
+            lock_release(&filesys_lock);
+            break;
+
+        case SYS_TELL:
+            lock_acquire(&filesys_lock);
+            off_t pos = file_tell(thread_current()->files[args[1]]);
+            lock_release(&filesys_lock);
+            f->eax = pos;
+            break;
+
+        case SYS_CLOSE:
+            lock_acquire(&filesys_lock);
+            file_close(thread_current()->files[args[1]]);
+            lock_release(&filesys_lock);
+            break;
+            
         case SYS_HALT:
             shutdown_power_off();
             break;
