@@ -218,9 +218,13 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
             break;
 
         case SYS_CLOSE:
-            lock_acquire(&filesys_lock);
-            file_close(thread_current()->files[args[1]]);
-            lock_release(&filesys_lock);
+            {
+                struct thread *cur = thread_current();
+                lock_acquire(&filesys_lock);
+                file_close(cur->files[args[1]]);
+                cur->files[args[1]] = NULL;
+                lock_release(&filesys_lock);
+            }
             break;
             
         case SYS_HALT:
