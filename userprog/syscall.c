@@ -17,6 +17,7 @@ static void syscall_handler(struct intr_frame *);
 static int get_user (const uint8_t *uaddr);
 static bool put_user (uint8_t *udst, uint8_t byte);
 static void check_valid_ptr(const void *ptr); 
+static void check_valid_buffer(const void *buffer, unsigned size);
 
 static struct lock filesys_lock;
 
@@ -46,6 +47,12 @@ static void check_valid_ptr(const void *ptr) {
     }
 }
 
+static void check_valid_buffer(const void *buffer, unsigned size) {
+    const uint8_t *buf = buffer;
+    for (unsigned i = 0; i < size; i++) {
+        check_valid_ptr(buf + i);
+    }
+}
 void syscall_init(void) {
     intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
     lock_init(&filesys_lock);
