@@ -44,12 +44,14 @@ static bool put_user (uint8_t *udst, uint8_t byte){
 
 static void check_valid_ptr(const void *ptr) {
     if (ptr == NULL || !is_user_vaddr(ptr) || ptr < (void *)0x08048000) {
+        printf("%s: exit(-1)\n", thread_current()->name);
         thread_exit();
     }
 }
 
 static void check_valid_string(const char *str) {
     if (str == NULL) {
+        printf("%s: exit(-1)\n", thread_current()->name);
         thread_exit();
     }
     while (true) {
@@ -100,9 +102,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_WRITE:
             {
-                check_valid_ptr(args + 1);
-                check_valid_ptr(args + 2);
-                check_valid_ptr(args + 3);
+                // check_valid_ptr(args + 1);
+                // check_valid_ptr(args + 2);
+                // check_valid_ptr(args + 3);
 
                 int fd = args[1];
                 const void *buffer = (const void *)args[2];
@@ -129,9 +131,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_READ:
             {
-                check_valid_ptr(args + 1);
-                check_valid_ptr(args + 2);
-                check_valid_ptr(args + 3);
+                // check_valid_ptr(args + 1);
+                // check_valid_ptr(args + 2);
+                // check_valid_ptr(args + 3);
 
                 int fd = args[1];
                 void *buffer = (void *)args[2];
@@ -172,8 +174,8 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_CREATE:
             {
-                check_valid_ptr(args + 1);
-                check_valid_ptr(args + 2);
+                // check_valid_ptr(args + 1);
+                // check_valid_ptr(args + 2);
 
                 const char *file = (const char *)args[1];
                 off_t initial_size = (off_t)args[2];
@@ -190,8 +192,8 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_REMOVE:
             {
-                check_valid_ptr(args + 1);
-                
+                // check_valid_ptr(args + 1);
+
                 const char *file = (const char *)args[1];
 
                 check_valid_string(file);
@@ -206,7 +208,7 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_OPEN:
             {           
-                check_valid_ptr(args + 1);
+                // check_valid_ptr(args + 1);
 
                 const char *file = (const char *)args[1];
 
