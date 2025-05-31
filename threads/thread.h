@@ -104,6 +104,15 @@ struct thread {
     uint32_t *pagedir; /* Page directory. */
     struct file *files[MAX_FILES]; /* File descriptor table */
     int next_fd; /* Next available fd */
+
+    struct child_status {
+      tid_t tid;   // child thread id
+      int exit_code;   // child exit status
+      bool has_exited;  // true when child has called exit()
+      struct semaphore sema;   // 
+      bool waited;  // true if parent already called wait()
+      struct list_elem elem;  // tracks the list of children
+    }
 #endif
 
     /* Owned by thread.c. */
