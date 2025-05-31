@@ -112,7 +112,7 @@ struct thread {
       struct semaphore sema;   // 
       bool waited;  // true if parent already called wait()
       struct list_elem elem;  // tracks the list of children
-    }
+    };
 #endif
 
     /* Owned by thread.c. */
