@@ -17,6 +17,8 @@ static void syscall_handler(struct intr_frame *);
 static int get_user (const uint8_t *uaddr);
 static bool put_user (uint8_t *udst, uint8_t byte);
 static void check_valid_ptr(const void *ptr); 
+static void check_valid_string(const char *str);
+static void check_valid_buffer(const void *buffer, unsigned size);
 
 static struct lock filesys_lock;
 
@@ -46,6 +48,24 @@ static void check_valid_ptr(const void *ptr) {
     }
 }
 
+static void check_valid_string(const char *str) {
+    if (str == NULL) {
+        thread_exit();
+    }
+    while (true) {
+        check_valid_ptr(str);
+        if (*str == '\0')
+            break;
+        str++;
+    }
+}
+
+static void check_valid_buffer(const void *buffer, unsigned size) {
+    const uint8_t *buf = buffer;
+    for (unsigned i = 0; i < size; i++) {
+        check_valid_ptr(buf + i);
+    }
+}
 void syscall_init(void) {
     intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
     lock_init(&filesys_lock);
@@ -84,6 +104,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
                 const void *buffer = (const void *)args[2];
                 unsigned size = args[3];
                 struct thread *cur = thread_current();
+
+                check_valid_ptr(buffer);
+                check_valid_buffer(buffer, size);
                 
                 if (fd == 1) { 
                     // Write to stdout
@@ -105,6 +128,8 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
                 const char *file = (const char *)args[1];
                 off_t initial_size = (off_t)args[2];
                 
+                check_valid_string(file);
+
                 lock_acquire(&filesys_lock);
                 bool success = filesys_create(file, initial_size);
                 lock_release(&filesys_lock);
@@ -115,8 +140,12 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_REMOVE:
             {
+                const char *file = (const char *)args[1];
+
+                check_valid_string(file);
+
                 lock_acquire(&filesys_lock);
-                bool success = filesys_remove((const char *)args[1]);
+                bool success = filesys_remove(file);
                 lock_release(&filesys_lock);          
                 f->eax = success;
             }
@@ -125,8 +154,12 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_OPEN:
             {           
+                const char *file = (const char *)args[1];
+
+                check_valid_string(file);
+
                 lock_acquire(&filesys_lock);
-                struct file *opened_file = filesys_open((const char *)args[1]);
+                struct file *opened_file = filesys_open(file);
                 lock_release(&filesys_lock);       
                 
                 if (opened_file == NULL) {
@@ -167,6 +200,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
                 void *buffer = (void *)args[2];
                 unsigned size = args[3];
                 struct thread *cur = thread_current();
+
+                check_valid_ptr(buffer);
+                check_valid_buffer(buffer, size);
                 
                 if (fd < 0 || fd >= MAX_FILES) {
                     f->eax = -1; // Invalid file descriptor
