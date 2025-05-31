@@ -100,6 +100,10 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_WRITE:
             {
+                check_valid_ptr(args + 1);
+                check_valid_ptr(args + 2);
+                check_valid_ptr(args + 3);
+
                 int fd = args[1];
                 const void *buffer = (const void *)args[2];
                 unsigned size = args[3];
@@ -123,8 +127,54 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
             }
             break;
 
+        case SYS_READ:
+            {
+                check_valid_ptr(args + 1);
+                check_valid_ptr(args + 2);
+                check_valid_ptr(args + 3);
+
+                int fd = args[1];
+                void *buffer = (void *)args[2];
+                unsigned size = args[3];
+                struct thread *cur = thread_current();
+
+                check_valid_ptr(buffer);
+                check_valid_buffer(buffer, size);
+                
+                if (fd < 0 || fd >= MAX_FILES) {
+                    f->eax = -1; // Invalid file descriptor
+                } else if (fd == 0) {
+                    // Reading from stdin
+                    unsigned i;
+                    uint8_t *buf = (uint8_t *)buffer;
+                    for (i = 0; i < size; i++) {
+                        char c = input_getc();
+                        if (c == '\r') c = '\n';  // Convert carriage return to newline
+                        buf[i] = c;
+                        if (c == '\n') {
+                            i++;
+                            break;
+                        }
+                    }
+                    f->eax = i;
+                } else if (fd == 1) {
+                    // Can't read from stdout
+                    f->eax = -1;
+                } else if (cur->files[fd] == NULL) {
+                    f->eax = -1; // File not open
+                } else {
+                    lock_acquire(&filesys_lock);
+                    f->eax = file_read(cur->files[fd], buffer, size);
+                    lock_release(&filesys_lock);
+                }
+            }
+            break;
+
         case SYS_CREATE:
             {
+                check_valid_ptr(args + 1);
+                check_valid_ptr(args + 2);
+
                 const char *file = (const char *)args[1];
                 off_t initial_size = (off_t)args[2];
                 
@@ -140,6 +190,8 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_REMOVE:
             {
+                check_valid_ptr(args + 1);
+                
                 const char *file = (const char *)args[1];
 
                 check_valid_string(file);
@@ -154,6 +206,8 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_OPEN:
             {           
+                check_valid_ptr(args + 1);
+
                 const char *file = (const char *)args[1];
 
                 check_valid_string(file);
@@ -189,45 +243,6 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
                 } else {
                     lock_acquire(&filesys_lock);
                     f->eax = file_length(cur->files[fd]);
-                    lock_release(&filesys_lock);
-                }
-            }
-            break;
-
-        case SYS_READ:
-            {
-                int fd = args[1];
-                void *buffer = (void *)args[2];
-                unsigned size = args[3];
-                struct thread *cur = thread_current();
-
-                check_valid_ptr(buffer);
-                check_valid_buffer(buffer, size);
-                
-                if (fd < 0 || fd >= MAX_FILES) {
-                    f->eax = -1; // Invalid file descriptor
-                } else if (fd == 0) {
-                    // Reading from stdin
-                    unsigned i;
-                    uint8_t *buf = (uint8_t *)buffer;
-                    for (i = 0; i < size; i++) {
-                        char c = input_getc();
-                        if (c == '\r') c = '\n';  // Convert carriage return to newline
-                        buf[i] = c;
-                        if (c == '\n') {
-                            i++;
-                            break;
-                        }
-                    }
-                    f->eax = i;
-                } else if (fd == 1) {
-                    // Can't read from stdout
-                    f->eax = -1;
-                } else if (cur->files[fd] == NULL) {
-                    f->eax = -1; // File not open
-                } else {
-                    lock_acquire(&filesys_lock);
-                    f->eax = file_read(cur->files[fd], buffer, size);
                     lock_release(&filesys_lock);
                 }
             }
