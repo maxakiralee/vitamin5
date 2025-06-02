@@ -260,6 +260,16 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
             shutdown_power_off();
             break;
 
+        case SYS_EXEC:
+            {
+                const char *cmd_line = (const char *)args[1];
+                check_valid_string(cmd_line);
+                
+                tid_t tid = process_execute(cmd_line);
+                f->eax = tid; // Return the thread ID of the new process
+            }
+            break;
+
         default:
             // Handle unknown system calls
             break;

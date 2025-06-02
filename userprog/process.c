@@ -56,6 +56,27 @@ tid_t process_execute(const char *file_name) {
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create(prog_name, PRI_DEFAULT, start_process, fn_copy);
     
+    /* Add the new child thread to the list */
+    if (tid == TID_ERROR){
+        struct thread *cur = thread_current();
+        struct child_status *c_status = palloc_get_page(0);
+        if (c_status != NULL) {
+            //initialize child status 
+            c_status->tid = tid;
+            c_status->exit_code = -1; // Indicating failure
+            c_status->has_exited = false;
+            c_status->waited = false;
+            sema_init(&c_status->sema, 0);
+
+            // modify the current thread's children list
+            lock_acquire(&cur->children_lock); 
+            list_push_back(&cur->children, &c_status->elem); // Add a new child to the list
+            lock_release(&cur->children_lock);
+        } else {
+            printf("process_execute: palloc_get_page failed for child status\n");
+        }
+    }
+
     /* Clean up regardless of success */
     palloc_free_page(prog_name_copy);
     

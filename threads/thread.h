@@ -99,6 +99,9 @@ struct thread {
     /* Shared between thread.c and synch.c. */
     struct list_elem elem; /* List element. */
 
+   struct list children;    /* List of struct child_status for all direct children */
+   struct lock children_lock; /* Protects the above list */
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir; /* Page directory. */
@@ -107,11 +110,17 @@ struct thread {
 
     struct child_status {
       tid_t tid;   // child thread id
+      struct list_elem elem;  // tracks the list of children
+      const char *cmd_line;
+
+      bool load_reported;             // True if child has reported load status via load_sema
+      bool load_successful;           // True if executable loaded successfully
+      struct semaphore load_sema;     // Parent (exec) waits on this for load completion signal
+
       int exit_code;   // child exit status
       bool has_exited;  // true when child has called exit()
-      struct semaphore sema;   // 
-      bool waited;  // true if parent already called wait()
-      struct list_elem elem;  // tracks the list of children
+      struct semaphore sema;   // notify parent when child finishes loading or exits
+      bool waited;  // enforce that the parent calls wait() only once per child
     };
 #endif
 
