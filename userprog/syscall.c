@@ -90,6 +90,7 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
     switch (args[0]) {
         case SYS_EXIT:
             f->eax = args[1];
+            thread_current()->status_of_child->exit_code = args[1];
             printf("%s: exit(%d)\n", thread_current()->name, args[1]);
             thread_exit();
             break;
@@ -271,6 +272,14 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
                 cur->files[args[1]] = NULL;
                 lock_release(&filesys_lock);
             }
+            break;
+
+        case SYS_EXEC:
+            f->eax = process_execute(args[1]);
+            break;
+
+        case SYS_WAIT:
+            f->eax = process_wait(args[1]);
             break;
             
         case SYS_HALT:
