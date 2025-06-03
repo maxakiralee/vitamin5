@@ -131,9 +131,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_READ:
             {
-                // check_valid_ptr(args + 1);
-                // check_valid_ptr(args + 2);
-                // check_valid_ptr(args + 3);
+                check_valid_ptr((void *)args[1]);
+                check_valid_ptr((void *)args[2]);
+                check_valid_ptr((void *)args[3]);
 
                 int fd = args[1];
                 void *buffer = (void *)args[2];
