@@ -103,9 +103,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_WRITE:
             {
-                // check_valid_ptr(args + 1);
-                // check_valid_ptr(args + 2);
-                // check_valid_ptr(args + 3);
+                check_valid_ptr(args + 1);
+                check_valid_ptr(args + 2);
+                check_valid_ptr(args + 3);
 
                 int fd = args[1];
                 const void *buffer = (const void *)args[2];
