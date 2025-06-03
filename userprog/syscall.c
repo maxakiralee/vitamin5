@@ -175,8 +175,8 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_CREATE:
             {
-                // check_valid_ptr(args + 1);
-                // check_valid_ptr(args + 2);
+                check_valid_ptr((void *)args[1]);
+                check_valid_ptr((void *)args[2]);
 
                 const char *file = (const char *)args[1];
                 off_t initial_size = (off_t)args[2];
