@@ -21,10 +21,15 @@
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
 
-static struct semaphore temporary;
+// static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 static bool setup_arguments(const char *cmd_line, void **esp);
+
+struct pargs {
+    char *fn_copy;
+    struct child_status *child;
+};
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -34,7 +39,7 @@ tid_t process_execute(const char *file_name) {
     char *fn_copy;
     tid_t tid;
 
-    sema_init(&temporary, 0);
+    // sema_init(&temporary, 0);
     /* Make a copy of FILE_NAME.
        Otherwise there's a race between the caller and load(). */
     fn_copy = palloc_get_page(0);
@@ -53,9 +58,32 @@ tid_t process_execute(const char *file_name) {
     char *save_ptr;
     char *prog_name = strtok_r(prog_name_copy, " ", &save_ptr);
 
+    struct child_status *child = palloc_get_page(0);
+    if (child == NULL) {
+        palloc_free_page(fn_copy);
+        palloc_free_page(prog_name_copy);
+        return TID_ERROR;
+    }
+
+    struct pargs *args = palloc_get_page(0);
+    if (args == NULL) {
+        palloc_free_page(fn_copy);
+        palloc_free_page(prog_name_copy);
+        palloc_free_page(child);
+        return TID_ERROR;
+    }
+
+    args->fn_copy = fn_copy;
+    args->child = child;
+
     /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create(prog_name, PRI_DEFAULT, start_process, fn_copy);
-    
+    tid = thread_create(prog_name, PRI_DEFAULT, start_process, args);
+
+    child->tid = tid;
+    sema_init(&child->sema, 0);
+    list_init(&thread_current()->children);
+    list_push_back(&thread_current()->children, &child->elem);
+
     /* Clean up regardless of success */
     palloc_free_page(prog_name_copy);
     
@@ -66,8 +94,9 @@ tid_t process_execute(const char *file_name) {
 
 /* A thread function that loads a user process and starts it
    running. */
-static void start_process(void *file_name_) {
-    char *file_name = file_name_;
+static void start_process(void *args) {
+    struct pargs *pargs = args;
+    char *file_name = pargs->fn_copy;
     struct intr_frame if_;
     bool success;
 
@@ -82,6 +111,8 @@ static void start_process(void *file_name_) {
     palloc_free_page(file_name);
     if (!success)
         thread_exit();
+
+    thread_current()->status_of_child = pargs->child;
 
     /* Start the user process by simulating a return from an
        interrupt, implemented by intr_exit (in
@@ -103,8 +134,23 @@ static void start_process(void *file_name_) {
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int process_wait(tid_t child_tid UNUSED) {
-    sema_down(&temporary);
-    return 0;
+    // sema_down(&temporary);
+    struct list_elem *e;
+    struct list *list = &thread_current()->children;
+    struct child_status *child = NULL;
+
+    for (e = list_begin(list); e != list_end(list); e = list_next(e)) {
+        child = list_entry(e, struct child_status, elem);
+        if (child->tid == child_tid) {
+            break;
+        }
+    }
+
+    if (child == NULL || child->waited) return -1;
+
+    child->waited = true;
+    sema_down(&child->sema);
+    return child->exit_code;
 }
 
 /* Free the current process's resources. */
@@ -136,7 +182,8 @@ void process_exit(void) {
         pagedir_activate(NULL);
         pagedir_destroy(pd);
     }
-    sema_up(&temporary);
+    // sema_up(&temporary);
+    sema_up(&thread_current()->status_of_child->sema);
 }
 
 /* Sets up the CPU for running user code in the current

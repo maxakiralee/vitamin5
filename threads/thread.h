@@ -13,6 +13,7 @@
 #define MAX_FILES 128
 
 
+
 /* States in a thread's life cycle. */
 enum thread_status {
     THREAD_RUNNING, /* Running thread. */
@@ -87,6 +88,16 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
+
+struct child_status {
+      tid_t tid;   // child thread id
+      int exit_code;   // child exit status
+      bool has_exited;  // true when child has called exit()
+      struct semaphore sema;
+      bool waited;  // true if parent already called wait()
+      struct list_elem elem;  // tracks the list of children
+};
+
 struct thread {
     /* Owned by thread.c. */
     tid_t tid; /* Thread identifier. */
@@ -105,14 +116,9 @@ struct thread {
     struct file *files[MAX_FILES]; /* File descriptor table */
     int next_fd; /* Next available fd */
 
-    struct child_status {
-      tid_t tid;   // child thread id
-      int exit_code;   // child exit status
-      bool has_exited;  // true when child has called exit()
-      struct semaphore sema;   // 
-      bool waited;  // true if parent already called wait()
-      struct list_elem elem;  // tracks the list of children
-    };
+    /* Process management */
+    struct list children;         /* List of child_status structures */
+    struct child_status *status_of_child;
 #endif
 
     /* Owned by thread.c. */
