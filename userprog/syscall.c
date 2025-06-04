@@ -43,7 +43,7 @@ static bool put_user (uint8_t *udst, uint8_t byte){
 }
 
 static void check_valid_ptr(const void *ptr) {
-    if (ptr == NULL || !is_user_vaddr(ptr) || ptr < (void *)0x08048000) {
+    if (ptr == NULL || !is_user_vaddr(ptr)) {
         printf("%s: exit(-1)\n", thread_current()->name);
         thread_exit();
     }
@@ -75,7 +75,8 @@ void syscall_init(void) {
 
 static void syscall_handler(struct intr_frame *f UNUSED) {
     uint32_t *args = ((uint32_t *) f->esp);
-    check_valid_ptr(args);
+    check_valid_ptr(args);    
+    check_valid_ptr(args+1);
 
 
     /*
@@ -103,9 +104,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_WRITE:
             {
-                check_valid_ptr(args + 1);
-                check_valid_ptr(args + 2);
-                check_valid_ptr(args + 3);
+                // check_valid_ptr((void *)args[1]);
+                // check_valid_ptr((void *)args[2]);
+                // check_valid_ptr((void *)args[3]);
 
                 int fd = args[1];
                 const void *buffer = (const void *)args[2];
@@ -132,9 +133,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_READ:
             {
-                check_valid_ptr((void *)args[1]);
-                check_valid_ptr((void *)args[2]);
-                check_valid_ptr((void *)args[3]);
+                // check_valid_ptr((void *)args[1]);
+                // check_valid_ptr((void *)args[2]);
+                // check_valid_ptr((void *)args[3]);
 
                 int fd = args[1];
                 void *buffer = (void *)args[2];
@@ -175,8 +176,8 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_CREATE:
             {
-                check_valid_ptr((void *)args[1]);
-                check_valid_ptr((void *)args[2]);
+                // check_valid_ptr((void *)args[1]);
+                // check_valid_ptr((void *)args[2]);
 
                 const char *file = (const char *)args[1];
                 off_t initial_size = (off_t)args[2];
@@ -193,10 +194,11 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_REMOVE:
             {
-                // check_valid_ptr(args + 1);
+                // check_valid_ptr((void *)args[1]);
 
                 const char *file = (const char *)args[1];
 
+                check_valid_ptr(file);
                 check_valid_string(file);
 
                 lock_acquire(&filesys_lock);
@@ -209,10 +211,11 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_OPEN:
             {           
-                // check_valid_ptr(args + 1);
+                // check_valid_ptr(args);
 
                 const char *file = (const char *)args[1];
-
+                
+                check_valid_ptr(file);
                 check_valid_string(file);
 
                 lock_acquire(&filesys_lock);
