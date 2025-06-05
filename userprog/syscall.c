@@ -273,7 +273,12 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
 
         case SYS_CLOSE:
             {
+                // check for fd number args[1]
+                int fd = args[1];
                 struct thread *cur = thread_current();
+                if (fd < 2 || fd >= MAX_FILES || cur->files[fd] == NULL) {
+                    break;
+                }
                 lock_acquire(&filesys_lock);
                 file_close(cur->files[args[1]]);
                 cur->files[args[1]] = NULL;
@@ -282,6 +287,10 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
             break;
 
         case SYS_EXEC:
+            // check_valid_ptr((void *)args[1]);
+            check_valid_buffer(&args[1], sizeof(uint32_t)); // cmd_line pointer
+            const char *cmd_line = (const char *)args[1];
+            check_valid_string(cmd_line);
             f->eax = process_execute(args[1]);
             break;
 

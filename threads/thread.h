@@ -122,6 +122,7 @@ struct thread {
 
     /* Owned by thread.c. */
     unsigned magic; /* Detects stack overflow. */
+    struct file *executable;  // Add this field to track the running executable
 };
 
 /* If false (default), use round-robin scheduler.

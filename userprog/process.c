@@ -75,11 +75,11 @@ tid_t process_execute(const char *file_name) {
         return TID_ERROR;
     }
 
-    child->tid = TID_ERROR;
+    child->tid = TID_ERROR; // Will be updated if thread_create succeeds
     child->exit_code = -1;
     child->waited = false;
     sema_init(&child->exit_sema, 0);
-    list_push_back(&thread_current()->children, &child->elem);
+    list_push_back(&thread_current()->children, &child->elem); // Add to parent's list
 
     args->fn_copy = fn_copy;
     args->child = child;
@@ -89,15 +89,30 @@ tid_t process_execute(const char *file_name) {
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create(prog_name, PRI_DEFAULT, start_process, args);
 
-    /* Clean up regardless of success */
-    palloc_free_page(prog_name_copy);
+    palloc_free_page(prog_name_copy); // prog_name_copy is no longer needed
     
-    if (tid == TID_ERROR)
-        palloc_free_page(fn_copy);
+    if (tid == TID_ERROR) {
+        palloc_free_page(fn_copy); // Child won't free it
+        list_remove(&child->elem); // Remove from parent's list
+        palloc_free_page(child);   // Free child_status struct
+        palloc_free_page(args);    // Free pargs struct
+        return TID_ERROR;
+    }
 
-    child->tid = tid;
-    sema_down(&args->load_sema); // wait for child process to finish loading
-    return args->load_success ? tid : TID_ERROR;
+    // Thread creation was successful
+    child->tid = tid; // Update TID in child_status
+
+    sema_down(&args->load_sema); // Wait for child process to finish loading
+
+    bool load_success = args->load_success;
+    palloc_free_page(args); // Free pargs struct, it's no longer needed by parent
+
+    if (!load_success) {
+        // Child failed to load. process_wait will handle cleanup of child_status.
+        return TID_ERROR;
+    }
+
+    return tid;
 }
 
 /* A thread function that loads a user process and starts it
@@ -142,30 +157,50 @@ static void start_process(void *args) {
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait(tid_t child_tid UNUSED) {
-    // sema_down(&temporary);
+int process_wait(tid_t child_tid) {
+    struct thread *cur = thread_current();
     struct list_elem *e;
-    struct list *list = &thread_current()->children;
-    struct child_status *child = NULL;
+    struct child_status *child_to_wait_on = NULL;
 
-    for (e = list_begin(list); e != list_end(list); e = list_next(e)) {
-        child = list_entry(e, struct child_status, elem);
-        if (child->tid == child_tid) {
+    // Find the child in the current thread's children list
+    for (e = list_begin(&cur->children); e != list_end(&cur->children); e = list_next(e)) {
+        struct child_status *cs = list_entry(e, struct child_status, elem);
+        if (cs->tid == child_tid) {
+            child_to_wait_on = cs;
             break;
         }
     }
 
-    if (child == NULL || child->waited) return -1;
+    // If child not found, or already waited on (which implies it would have been removed), return -1.
+    // The original check `child->waited` handles if wait is called multiple times on a found child before it's removed.
+    if (child_to_wait_on == NULL || child_to_wait_on->waited) {
+        return -1;
+    }
 
-    child->waited = true;
-    sema_down(&child->exit_sema); // wait for child process to exit
-    return child->exit_code;
+    child_to_wait_on->waited = true; // Mark as being waited on (or that waiting has started)
+    sema_down(&child_to_wait_on->exit_sema); // Wait for the child to exit
+
+    int exit_code = child_to_wait_on->exit_code;
+
+    // Child has exited, remove its status structure from parent's list and free it.
+    list_remove(&child_to_wait_on->elem);
+    palloc_free_page(child_to_wait_on);
+
+    return exit_code;
 }
 
 /* Free the current process's resources. */
 void process_exit(void) {
     struct thread *cur = thread_current();
     uint32_t *pd;
+
+    // If this thread was created by a parent process (i.e., it's a child),
+    // signal its parent that it's exiting.
+    // cur->status_of_child is set in start_process.
+    if (cur->status_of_child != NULL) {
+        // The exit code should have been set by SYS_EXIT or remains -1 for abnormal termination.
+        sema_up(&cur->status_of_child->exit_sema);
+    }
 
     /* Close all open files */
     int i;
@@ -174,6 +209,20 @@ void process_exit(void) {
             file_close(cur->files[i]);
             cur->files[i] = NULL;
         }
+    }
+
+    /* Re-allow write access to the executable and close it */
+    if (cur->executable != NULL) {
+        file_allow_write(cur->executable);
+        file_close(cur->executable);
+        cur->executable = NULL;
+    }
+
+    /* Free child_status structures for children that were not waited for. */
+    while (!list_empty(&cur->children)) {
+        struct list_elem *e = list_pop_front(&cur->children);
+        struct child_status *cs = list_entry(e, struct child_status, elem);
+        palloc_free_page(cs);
     }
 
     /* Destroy the current process's page directory and switch back
@@ -316,6 +365,12 @@ bool load(const char *file_name, void (**eip)(void), void **esp) {
         goto done;
     }
 
+    /* Deny write access to the executable file */
+    file_deny_write(file);
+    
+    /* Store the executable file in the thread structure */
+    t->executable = file;
+    
     /* Read and verify executable header. */
     if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr ||
         memcmp(ehdr.e_ident, "\177ELF\1\1\1", 7) || ehdr.e_type != 2 ||
@@ -396,7 +451,12 @@ bool load(const char *file_name, void (**eip)(void), void **esp) {
 
 done:
     /* We arrive here whether the load is successful or not. */
-    file_close(file);
+    /* Don't close the file here anymore - we need to keep it open
+       to maintain write protection */
+    if (!success && file != NULL) {
+        file_close(file);
+        t->executable = NULL;
+    }
     return success;
 }
 
