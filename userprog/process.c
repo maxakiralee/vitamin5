@@ -29,6 +29,8 @@ static bool setup_arguments(const char *cmd_line, void **esp);
 struct pargs {
     char *fn_copy;
     struct child_status *child;
+    struct semaphore load_sema;
+    bool load_success;
 };
 
 /* Starts a new thread running a user program loaded from
@@ -73,23 +75,29 @@ tid_t process_execute(const char *file_name) {
         return TID_ERROR;
     }
 
+    child->tid = TID_ERROR;
+    child->exit_code = -1;
+    child->waited = false;
+    sema_init(&child->exit_sema, 0);
+    list_push_back(&thread_current()->children, &child->elem);
+
     args->fn_copy = fn_copy;
     args->child = child;
+    sema_init(&args->load_sema, 0);
+    args->load_success = false;
 
     /* Create a new thread to execute FILE_NAME. */
     tid = thread_create(prog_name, PRI_DEFAULT, start_process, args);
-
-    child->tid = tid;
-    sema_init(&child->sema, 0);
-    list_init(&thread_current()->children);
-    list_push_back(&thread_current()->children, &child->elem);
 
     /* Clean up regardless of success */
     palloc_free_page(prog_name_copy);
     
     if (tid == TID_ERROR)
         palloc_free_page(fn_copy);
-    return tid;
+
+    child->tid = tid;
+    sema_down(&args->load_sema); // wait for child process to finish loading
+    return args->load_success ? tid : TID_ERROR;
 }
 
 /* A thread function that loads a user process and starts it
@@ -97,6 +105,7 @@ tid_t process_execute(const char *file_name) {
 static void start_process(void *args) {
     struct pargs *pargs = args;
     char *file_name = pargs->fn_copy;
+    thread_current()->status_of_child = pargs->child;
     struct intr_frame if_;
     bool success;
 
@@ -106,13 +115,13 @@ static void start_process(void *args) {
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
     success = load(file_name, &if_.eip, &if_.esp);
+    pargs->load_success = success;
+    sema_up(&pargs->load_sema); // signal completion of loading
 
     /* If load failed, quit. */
     palloc_free_page(file_name);
     if (!success)
         thread_exit();
-
-    thread_current()->status_of_child = pargs->child;
 
     /* Start the user process by simulating a return from an
        interrupt, implemented by intr_exit (in
@@ -149,7 +158,7 @@ int process_wait(tid_t child_tid UNUSED) {
     if (child == NULL || child->waited) return -1;
 
     child->waited = true;
-    sema_down(&child->sema);
+    sema_down(&child->exit_sema); // wait for child process to exit
     return child->exit_code;
 }
 
@@ -183,7 +192,7 @@ void process_exit(void) {
         pagedir_destroy(pd);
     }
     // sema_up(&temporary);
-    sema_up(&thread_current()->status_of_child->sema);
+    sema_up(&cur->status_of_child->exit_sema); // signal child has exited
 }
 
 /* Sets up the CPU for running user code in the current

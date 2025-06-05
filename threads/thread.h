@@ -92,8 +92,7 @@ typedef int tid_t;
 struct child_status {
       tid_t tid;   // child thread id
       int exit_code;   // child exit status
-      bool has_exited;  // true when child has called exit()
-      struct semaphore sema;
+      struct semaphore exit_sema; // child exit semaphore
       bool waited;  // true if parent already called wait()
       struct list_elem elem;  // tracks the list of children
 };
