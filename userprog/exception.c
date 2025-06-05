@@ -85,6 +85,7 @@ static void kill(struct intr_frame *f) {
                f->vec_no, intr_name(f->vec_no));
         intr_dump_frame(f);
         thread_exit();
+      //   process_exit(-1);
 
     case SEL_KCSEG:
         /* Kernel's code segment, which indicates a kernel bug.
@@ -93,6 +94,7 @@ static void kill(struct intr_frame *f) {
            here.)  Panic the kernel to make the point.  */
         intr_dump_frame(f);
         PANIC("Kernel bug - unexpected interrupt in kernel");
+      // process_exit(-1);
 
     default:
         /* Some other code segment?  Shouldn't happen.  Panic the
@@ -140,7 +142,10 @@ static void page_fault(struct intr_frame *f) {
     not_present = (f->error_code & PF_P) == 0;
     write = (f->error_code & PF_W) != 0;
     user = (f->error_code & PF_U) != 0;
-
+    if (user) {
+        printf("%s: exit(-1)\n", thread_current()->name);
+        thread_exit();
+    }
     /* To implement virtual memory, delete the rest of the function
        body, and replace it with code that brings in the page to
        which fault_addr refers. */
