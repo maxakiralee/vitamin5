@@ -43,7 +43,7 @@ static bool put_user (uint8_t *udst, uint8_t byte){
 }
 
 static void check_valid_ptr(const void *ptr) {
-    if (ptr == NULL || !is_user_vaddr(ptr)) {
+    if (ptr == NULL || !is_user_vaddr(ptr) || pagedir_get_page(thread_current()->pagedir, ptr) == NULL) {
         printf("%s: exit(-1)\n", thread_current()->name);
         thread_exit();
     }
@@ -74,6 +74,7 @@ void syscall_init(void) {
 }
 
 static void syscall_handler(struct intr_frame *f UNUSED) {
+    check_valid_ptr(f->esp);
     uint32_t *args = ((uint32_t *) f->esp);
     check_valid_ptr(args);    
     check_valid_ptr(args+1);
@@ -111,10 +112,11 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
                 int fd = args[1];
                 const void *buffer = (const void *)args[2];
                 unsigned size = args[3];
-                struct thread *cur = thread_current();
 
                 check_valid_ptr(buffer);
                 check_valid_buffer(buffer, size);
+                
+                struct thread *cur = thread_current();
                 
                 if (fd == 1) { 
                     // Write to stdout
@@ -138,7 +140,9 @@ static void syscall_handler(struct intr_frame *f UNUSED) {
                 // check_valid_ptr((void *)args[3]);
 
                 int fd = args[1];
+                check_valid_ptr(args + 2); // Ensure args[2] is valid
                 void *buffer = (void *)args[2];
+                check_valid_ptr(args + 3); // Ensure args[3] is valid
                 unsigned size = args[3];
                 struct thread *cur = thread_current();
 
